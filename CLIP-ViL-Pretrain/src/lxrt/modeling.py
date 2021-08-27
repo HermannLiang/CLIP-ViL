@@ -584,7 +584,7 @@ class LXRTEncoder(nn.Module):
     def forward(self, lang_feats, lang_attention_mask,
                 visn_feats, visn_attention_mask=None):
         if VISUAL_CONFIG.vilt_style:
-            assert(not VISUAL_CONFIG.freeze_clip)
+            # assert(not VISUAL_CONFIG.freeze_clip)
             if VISUAL_CONFIG.use_clip:
                 images, boxes = visn_feats
                 lang_attention_mask = lang_attention_mask.squeeze(1).squeeze(1)
