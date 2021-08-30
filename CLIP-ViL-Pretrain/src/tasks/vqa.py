@@ -22,38 +22,43 @@ from lxrt.visual_transformers import adjust_learning_rate
 try:
     from apex import amp
 except ImportError:
-    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+    raise ImportError(
+        "Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
-def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False, distributed=False, aspect_ratio_group_factor = -1, exhaustive = False) -> DataTuple:
+
+def get_data_tuple(splits: str, bs: int, shuffle=False, drop_last=False, distributed=False, aspect_ratio_group_factor=-1, exhaustive=False) -> DataTuple:
     dset = VQADataset(splits)
     tset = VQATorchDataset(dset)
     evaluator = VQAEvaluator(dset)
 
     if distributed:
         train_sampler = DistributedSampler(
-        tset,
-        num_replicas=args.world_size,
-        rank=args.local_rank,
-        shuffle=shuffle,
+            tset,
+            num_replicas=args.world_size,
+            rank=args.local_rank,
+            shuffle=shuffle,
         )
     else:
         train_sampler = torch.utils.data.RandomSampler(tset)
         if not shuffle:
             train_sampler = torch.utils.data.SequentialSampler(tset)
-    
+
     if aspect_ratio_group_factor >= 0:
-        group_ids = create_aspect_ratio_groups(tset, k=args.aspect_ratio_group_factor)
-        train_batch_sampler = GroupedBatchSampler(train_sampler, group_ids, bs, exhaustive = exhaustive)
+        group_ids = create_aspect_ratio_groups(
+            tset, k=args.aspect_ratio_group_factor)
+        train_batch_sampler = GroupedBatchSampler(
+            train_sampler, group_ids, bs, exhaustive=exhaustive)
     else:
         train_batch_sampler = torch.utils.data.BatchSampler(
-        train_sampler, bs, drop_last=True)
+            train_sampler, bs, drop_last=True)
 
     data_loader = DataLoader(
         tset,
-        batch_sampler=train_batch_sampler, num_workers=args.num_workers, pin_memory=True,
-        collate_fn = tset.collate_fn
+        batch_sampler=train_batch_sampler, num_workers=args.num_workers, pin_memory=args.pin_memory,
+        collate_fn=tset.collate_fn
     )
+    print(f"DataLoader Using {args.num_workers} workers")
     '''else:
         data_loader = DataLoader(
             tset, batch_size=bs,
@@ -69,7 +74,7 @@ class VQA:
         # Datasets
         self.train_tuple = get_data_tuple(
             args.train, bs=args.batch_size, shuffle=True, drop_last=True, distributed=args.distributed,
-             aspect_ratio_group_factor=args.aspect_ratio_group_factor
+            aspect_ratio_group_factor=args.aspect_ratio_group_factor
         )
         if args.valid != "":
             self.valid_tuple = get_data_tuple(
@@ -80,7 +85,7 @@ class VQA:
             )
         else:
             self.valid_tuple = None
-        
+
         # Model
         self.model = VQAModel(self.train_tuple.dataset.num_answers)
 
@@ -90,7 +95,7 @@ class VQA:
         if args.load_lxmert_qa is not None:
             load_lxmert_qa(args.load_lxmert_qa, self.model,
                            label2ans=self.train_tuple.dataset.label2ans)
-        
+
         self.model = self.model.to(args.device)
         # Loss and Optimizer
         self.bce_loss = nn.BCEWithLogitsLoss()
@@ -113,70 +118,75 @@ class VQA:
 
                 optimizer_grouped_parameters = [
                     {
-                        "params": [p for n, p in self.model.named_parameters() if ( (not any(nd in n for nd in no_decay)) and ("visual_model" not in n) ) ],
+                        "params": [p for n, p in self.model.named_parameters() if ((not any(nd in n for nd in no_decay)) and ("visual_model" not in n))],
                         "weight_decay": args.weight_decay,
                     },
                     {
-                        "params": [p for n, p in self.model.named_parameters() if ( (any(nd in n for nd in no_decay)) and ("visual_model" not in n ))],
+                        "params": [p for n, p in self.model.named_parameters() if ((any(nd in n for nd in no_decay)) and ("visual_model" not in n))],
                         "weight_decay": 0.0,
                     },
                 ]
                 optim = AdamW(optimizer_grouped_parameters,
-                            lr=args.lr,
-                            #betas=(0.9, 0.98),
-                            eps=args.adam_epsilon)
+                              lr=args.lr,
+                              #betas=(0.9, 0.98),
+                              eps=args.adam_epsilon)
                 visn_model = self.model.lxrt_encoder.model.bert.encoder.visual_model
                 if args.use_adam_for_visual:
 
                     optimizer_grouped_parameters = [
                         {
-                            "params": [p for n, p in visn_model.named_parameters() if ( (not any(nd in n for nd in no_decay)) and ("visual_model" not in n) ) ],
+                            "params": [p for n, p in visn_model.named_parameters() if ((not any(nd in n for nd in no_decay)) and ("visual_model" not in n))],
                             "weight_decay": args.weight_decay,
                         },
                         {
-                            "params": [p for n, p in visn_model.named_parameters() if ( (any(nd in n for nd in no_decay)) and ("visual_model" not in n ))],
+                            "params": [p for n, p in visn_model.named_parameters() if ((any(nd in n for nd in no_decay)) and ("visual_model" not in n))],
                             "weight_decay": 0.0,
                         },
                     ]
                     sgd = AdamW(optimizer_grouped_parameters,
-                            lr=args.sgd_lr,
-                            #betas=(0.9, 0.98),
-                            eps=args.adam_epsilon)
+                                lr=args.sgd_lr,
+                                #betas=(0.9, 0.98),
+                                eps=args.adam_epsilon)
                 else:
                     sgd_parameters = visn_model.parameters()
                     sgd = torch.optim.SGD(sgd_parameters, args.sgd_lr,
-                                    momentum=args.sgd_momentum,
-                                    weight_decay=args.sgd_weight_decay)
+                                          momentum=args.sgd_momentum,
+                                          weight_decay=args.sgd_weight_decay)
 
                 self.optim = FusedOptimizer([optim, sgd])
                 batch_per_epoch = len(self.train_tuple.loader)
-                t_total = int(batch_per_epoch * args.epochs) // args.gradient_accumulation_steps
+                t_total = int(batch_per_epoch *
+                              args.epochs) // args.gradient_accumulation_steps
                 self.scheduler = get_linear_schedule_with_warmup(
                     optim, num_warmup_steps=args.warmup_ratio * t_total, num_training_steps=t_total
                 )
             else:
                 self.optim = AdamW(optimizer_grouped_parameters,
-                            lr=args.lr,
-                            #betas=(0.9, 0.98),
-                            eps=args.adam_epsilon)
-                
+                                   lr=args.lr,
+                                   #betas=(0.9, 0.98),
+                                   eps=args.adam_epsilon)
+
                 batch_per_epoch = len(self.train_tuple.loader)
-                t_total = int(batch_per_epoch * args.epochs) // args.gradient_accumulation_steps
+                t_total = int(batch_per_epoch *
+                              args.epochs) // args.gradient_accumulation_steps
                 self.scheduler = get_linear_schedule_with_warmup(
                     self.optim, num_warmup_steps=args.warmup_ratio * t_total, num_training_steps=t_total
                 )
 
             if args.fp16:
                 if args.use_separate_optimizer_for_visual:
-                    self.model, [optim, sgd] = amp.initialize(self.model, self.optim.optimizers, enabled=args.fp16, opt_level=args.fp16_opt_level)
+                    self.model, [optim, sgd] = amp.initialize(
+                        self.model, self.optim.optimizers, enabled=args.fp16, opt_level=args.fp16_opt_level)
                     self.optim = FusedOptimizer([optim, sgd])
                 else:
-                    self.model, self.optim = amp.initialize(self.model, self.optim, enabled=args.fp16, opt_level=args.fp16_opt_level)
+                    self.model, self.optim = amp.initialize(
+                        self.model, self.optim, enabled=args.fp16, opt_level=args.fp16_opt_level)
                 from apex.parallel import DistributedDataParallel as DDP
                 self.model = DDP(self.model)
             else:
                 self.model = torch.nn.parallel.DistributedDataParallel(
-                    self.model, device_ids=[args.gpu], find_unused_parameters=True
+                    self.model, device_ids=[
+                        args.gpu], find_unused_parameters=True
                 )
         elif 'bert' in args.optim:
             # GPU options
@@ -185,7 +195,8 @@ class VQA:
                 self.model.lxrt_encoder.multi_gpu()
 
             batch_per_epoch = len(self.train_tuple.loader)
-            t_total = int(batch_per_epoch * args.epochs) // args.gradient_accumulation_steps
+            t_total = int(batch_per_epoch *
+                          args.epochs) // args.gradient_accumulation_steps
             print("BertAdam Total Iters: %d" % t_total)
             from lxrt.optimization import BertAdam
             self.optim = BertAdam(list(self.model.parameters()),
@@ -194,14 +205,15 @@ class VQA:
                                   t_total=t_total)
         else:
             self.optim = args.optimizer(self.model.parameters(), args.lr)
-        
+
         # Output Directory
         self.output = args.output
         os.makedirs(self.output, exist_ok=True)
 
     def train(self, train_tuple, eval_tuple):
         dset, loader, evaluator = train_tuple
-        iter_wrapper = (lambda x: tqdm(x, total=len(loader))) if args.tqdm else (lambda x: x)
+        iter_wrapper = (lambda x: tqdm(x, total=len(loader))
+                        ) if args.tqdm else (lambda x: x)
 
         best_valid = 0.
         train_meter = TrainingMeter()
@@ -210,22 +222,22 @@ class VQA:
                 adjust_learning_rate(self.optim.optimizers[-1], epoch, args)
             quesid2ans = {}
             for i, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
-                
+
                 if args.skip_training:
                     break
-                
+
                 self.model.train()
-                #self.optim.zero_grad()
+                # self.optim.zero_grad()
 
                 feats, boxes, target = feats.cuda(), boxes.cuda(), target.cuda()
                 logit = self.model(feats, boxes, sent)
                 assert logit.dim() == target.dim() == 2
                 loss = self.bce_loss(logit, target)
-                #print(loss)
+                # print(loss)
                 if args.loss_scale != 1:
                     loss = loss * args.loss_scale
                 else:
-                    loss = loss * logit.size(1) 
+                    loss = loss * logit.size(1)
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
                 if args.fp16:
@@ -237,30 +249,34 @@ class VQA:
                             scaled_loss.backward()
                 else:
                     loss.backward()
-                
+
                 if (i + 1) % args.gradient_accumulation_steps == 0:
                     if args.fp16:
-                        total_norm = torch.nn.utils.clip_grad_norm_(amp.master_params(self.optim), args.max_grad_norm)
+                        total_norm = torch.nn.utils.clip_grad_norm_(
+                            amp.master_params(self.optim), args.max_grad_norm)
                     else:
-                        total_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.max_grad_norm)
-                    
+                        total_norm = torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), args.max_grad_norm)
+
                     self.optim.step()
-                    #if args.distributed:
+                    # if args.distributed:
                     self.scheduler.step()  # Update learning rate schedule
                     self.model.zero_grad()
-                    #self.optim.step()
+                    # self.optim.step()
 
                 train_meter.update(
-                    {'loss': loss.detach().mean().item() * args.gradient_accumulation_steps / args.loss_scale * logit.size(1)}
+                    {'loss': loss.detach().mean().item(
+                    ) * args.gradient_accumulation_steps / args.loss_scale * logit.size(1)}
                 )
 
                 score, label = logit.max(1)
                 for qid, l in zip(ques_id, label.cpu().numpy()):
                     ans = dset.label2ans[l]
                     quesid2ans[qid] = ans
-                
+
                 if i != 0 and i % args.report_step == 0 and args.local_rank <= 0:
-                    print("Epoch {}, Training Step {} of {}".format(epoch, i, len(loader)))
+                    print("Epoch {}, Training Step {} of {}".format(
+                        epoch, i, len(loader)))
                     train_meter.report()
                     train_meter.clean()
 
@@ -274,10 +290,10 @@ class VQA:
                         self.save("BEST")
 
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
-                           "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
+                           "Epoch %d: Best %0.2f\n" % (
+                               epoch, best_valid * 100.)
             if args.local_rank <= 0:
                 print(log_str, end='')
-
 
         self.save("LAST")
 
@@ -293,7 +309,8 @@ class VQA:
         dset, loader, evaluator = eval_tuple
         quesid2ans = {}
         for i, datum_tuple in enumerate(tqdm(loader)):
-            ques_id, feats, boxes, sent = datum_tuple[:4]   # Avoid seeing ground truth
+            # Avoid seeing ground truth
+            ques_id, feats, boxes, sent = datum_tuple[:4]
             with torch.no_grad():
                 feats, boxes = feats.cuda(), boxes.cuda()
                 logit = self.model(feats, boxes, sent)
@@ -345,6 +362,26 @@ if __name__ == "__main__":
         print("\n\n")
         print(" ".join(sys.argv))
         print("\n\n")
+
+    if args.debug_data:
+        print("Debugging DataLoader")
+
+        val_tuple = get_data_tuple('train', bs=args.batch_size,
+                                   shuffle=False, drop_last=False, aspect_ratio_group_factor=args.aspect_ratio_group_factor)
+        # print(len(val_tuple))
+
+        # print(type(val_tuple[0]))
+        # print(type(val_tuple[1]))
+        def debugging_data(data_tuple):
+            dset, loader, evaluator = data_tuple
+            iter_wrapper = (lambda x: tqdm(x, total=len(loader))
+                            ) if args.tqdm else (lambda x: x)
+            for i, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
+                pass
+        debugging_data(val_tuple)
+        assert(0)
+
+
     # Build Class
     vqa = VQA()
 
@@ -355,6 +392,7 @@ if __name__ == "__main__":
 
     # Test or Train
     if args.test is not None:
+        print("Generating test results")
         args.fast = args.tiny = False       # Always loading all data in test
         if 'test' in args.test:
             vqa.predict(
@@ -362,7 +400,7 @@ if __name__ == "__main__":
                                shuffle=False, drop_last=False, aspect_ratio_group_factor=args.aspect_ratio_group_factor, exhaustive=True),
                 dump=os.path.join(args.output, 'test_predict.json')
             )
-        elif 'val' in args.test:    
+        elif 'val' in args.test:
             # Since part of valididation data are used in pre-training/fine-tuning,
             # only validate on the minival set.
             result = vqa.evaluate(
@@ -373,7 +411,9 @@ if __name__ == "__main__":
             print(result)
         else:
             assert False, "No such test option for %s" % args.test
+
     else:
+        print("Training...")
         print('Splits in Train data:', vqa.train_tuple.dataset.splits)
         if vqa.valid_tuple is not None:
             print('Splits in Valid data:', vqa.valid_tuple.dataset.splits)

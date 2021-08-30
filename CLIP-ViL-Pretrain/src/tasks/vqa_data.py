@@ -10,7 +10,10 @@ import torch
 from torch.utils.data import Dataset
 
 from param import args
-from utils import load_obj_tsv
+# for testing only
+# from test_data import Args
+# args = Args()
+# from utils import load_obj_tsv
 import os
 import IPython.display
 import matplotlib.pyplot as plt
@@ -31,7 +34,7 @@ FAST_IMG_NUM = 5000
 
 # The path to data and image features.
 VQA_DATA_ROOT = 'data/vqa/'
-MSCOCO_IMGFEAT_ROOT = 'data/mscoco_imgfeat/'
+MSCOCO_IMGFEAT_ROOT = 'data/mscoco/mscoco_feat/'
 SPLIT2NAME = {
     'train': 'train2014',
     'valid': 'val2014',
@@ -63,6 +66,9 @@ class VQADataset:
         }
     """
     def __init__(self, splits: str):
+        """
+        splits: str of train, valid, minival, nominival etc, seperated by comma
+        """
         self.name = splits
         self.splits = splits.split(',')
 
@@ -90,7 +96,7 @@ class VQADataset:
     def __len__(self):
         return len(self.data)
 
-from src.pretrain.lxmert_data import ImageReader
+
 """
 An example in obj36 tsv:
 FIELDNAMES = ["img_id", "img_h", "img_w", "objects_id", "objects_conf",
@@ -103,6 +109,7 @@ class VQATorchDataset(Dataset):
 
         ### Control options
         self.input_raw_images = args.input_raw_images
+        self.use_clip_features = args.use_clip_features
         self.vqa_style_transform = args.vqa_style_transform
         self.use_h5_file = args.use_h5_file
         self.image_size_min = args.image_size_min
@@ -166,6 +173,7 @@ class VQATorchDataset(Dataset):
             with open("data/mscoco/width_heigths.json") as f:
                 self.w_h_records = json.load(f)
         if self.input_raw_images:
+            from src.pretrain.lxmert_data import ImageReader
             from torchvision.transforms import Compose, CenterCrop, ToTensor, Normalize, ColorJitter
             #device = "cuda" if torch.cuda.is_available() else "cpu"
             #model, preprocess = clip.load("ViT-B/32", device=device)        
@@ -193,27 +201,35 @@ class VQATorchDataset(Dataset):
                 if datum['img_id'] in self.ids_to_index:
                     used_data.append(datum)
             self.data = used_data
+
+        elif self.use_clip_features:
+            self.data = self.raw_dataset.data
+
         else:
             # Loading detection features to img_data
-            img_data = []
-            for split in dataset.splits:
-                # Minival is 5K images in MS COCO, which is used in evaluating VQA/LXMERT-pre-training.
-                # It is saved as the top 5K features in val2014_***.tsv
-                load_topk = 5000 if (split == 'minival' and topk is None) else topk
-                img_data.extend(load_obj_tsv(
-                    os.path.join(MSCOCO_IMGFEAT_ROOT, '%s_obj36.tsv' % (SPLIT2NAME[split])),
-                    topk=load_topk))
+            pass
 
-            # Convert img list to dict
-            self.imgid2img = {}
-            for img_datum in img_data:
-                self.imgid2img[img_datum['img_id']] = img_datum
+            # img_data = []
+            # for split in dataset.splits:
+            #     # Minival is 5K images in MS COCO, which is used in evaluating VQA/LXMERT-pre-training.
+            #     # It is saved as the top 5K features in val2014_***.tsv
+            #     load_topk = 5000 if (split == 'minival' and topk is None) else topk
+            #     img_data.extend(load_obj_tsv(
+            #         os.path.join(MSCOCO_IMGFEAT_ROOT, '%s_obj36.tsv' % (SPLIT2NAME[split])),
+            #         topk=load_topk))
 
-            # Only kept the data with loaded image features
-            self.data = []
-            for datum in self.raw_dataset.data:
-                if datum['img_id'] in self.imgid2img:
-                    self.data.append(datum)
+            # # Convert img list to dict
+            # self.imgid2img = {}
+            # for img_datum in img_data:
+            #     self.imgid2img[img_datum['img_id']] = img_datum
+
+            # # Only kept the data with loaded image features
+            # self.data = []
+            # for datum in self.raw_dataset.data:
+            #     if datum['img_id'] in self.imgid2img:
+            #         self.data.append(datum)
+
+
         print("Use %d data in torch dataset" % (len(self.data)))
         print()
 
@@ -249,8 +265,49 @@ class VQATorchDataset(Dataset):
     def __getitem__(self, item: int):
         if self.input_raw_images:
             return self.getitem_clip(item)
+
+        if self.use_clip_features:
+            return self.getitem_clip_features(item)
         else:
             return self.getitem_butd(item)
+
+    def getitem_clip_features(self,item: int):
+        datum = self.data[item]
+
+        img_id = datum['img_id']
+        ques_id = datum['question_id']
+        ques = datum['sent']
+        # img_id : COCO_val2014_000000393267
+        # actual image file name: data/mscoco/val2014/COCO_val2014_000000393267.jpg
+
+        # features saved in # MSCOCO_IMGFEAT_ROOT/SPLIT2NAME[split]/{img_id}.pth
+        if "val2014" in img_id:
+            image_file_name = "data/mscoco/val2014/{}.jpg".format(img_id)
+            image_feat_name = f"{MSCOCO_IMGFEAT_ROOT}val2014/{img_id}.pth"
+        elif "train2014" in img_id:
+            image_file_name = "data/mscoco/train2014/{}.jpg".format(img_id)
+            image_feat_name = f"{MSCOCO_IMGFEAT_ROOT}train2014/{img_id}.pth"
+        
+        with open(image_feat_name,"rb") as f:
+            feats = torch.load(f, map_location=torch.device("cpu"))
+        #if feats.size()[1] > feats.size()[2]:
+        #    feats = to_image_list([feats], max_size=(3, 1000, 600))[0]
+        #else:
+        #    feats = to_image_list([feats], max_size=(3, 600, 1000))[0]
+        assert(feats.size() == (1, 7, 7, 2048))
+        boxes = torch.Tensor([0.0]) # Just being lazy
+
+        # Provide label (target)
+        
+        if 'label' in datum:
+            label = datum['label']
+            target = torch.zeros(self.raw_dataset.num_answers)
+            for ans, score in label.items():
+                target[self.raw_dataset.ans2label[ans]] = score
+            return ques_id, feats, boxes, ques, target
+        else:
+            return ques_id, feats, boxes, ques
+        
     
     def getitem_clip(self, item):
         datum = self.data[item]
@@ -271,7 +328,6 @@ class VQATorchDataset(Dataset):
         #    feats = to_image_list([feats], max_size=(3, 1000, 600))[0]
         #else:
         #    feats = to_image_list([feats], max_size=(3, 600, 1000))[0]
-
         boxes = torch.Tensor([0.0]) # Just being lazy
 
         # Provide label (target)

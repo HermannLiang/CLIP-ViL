@@ -96,6 +96,9 @@ class VisualConfig(object):
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    # Debugging
+    parser.add_argument("--debug_data", action='store_true')
+
     # Data Splits
     parser.add_argument("--train", default='train')
     parser.add_argument("--valid", default='valid')
@@ -157,7 +160,7 @@ def parse_args():
     parser.add_argument("--use_clip", action='store_true')
     parser.add_argument("--visualbert_style", action="store_true")
     parser.add_argument("--report_step", default=200, type=int)
-    
+    parser.add_argument("--pin_memory", default=True, type=bool)
     parser.add_argument("--local_rank", default=-1, type=int)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--nodes", type=int, default=1)
@@ -177,7 +180,7 @@ def parse_args():
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1,
         help="Number of updates steps to accumulate before performing a backward/update pass.",)
     
-
+    parser.add_argument("--use_clip_features", action="store_true")
     parser.add_argument("--use_h5_file", action="store_true")
     parser.add_argument("--drop_boxes", action="store_true")
     parser.add_argument("--skip_training", action="store_true")
