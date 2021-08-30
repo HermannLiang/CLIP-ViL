@@ -36,6 +36,7 @@ class VisualConfig(object):
                  x_layers=5,
                  r_layers=0,
                  use_clip=False,
+                 skip_clip=False,
                  visualbert_style=False,
                  freeze_clip=False,
                  clip_model_name="ViT-B/32",
@@ -75,6 +76,7 @@ class VisualConfig(object):
         }
         
         self.use_clip = use_clip
+        self.skip_clip = skip_clip
         self.visualbert_style = visualbert_style
         self.freeze_clip = freeze_clip
         self.clip_model_name = clip_model_name
@@ -158,6 +160,8 @@ def parse_args():
     parser.add_argument("--input_raw_images", action='store_true')
     parser.add_argument("--clip_model_name", type=str, default="ViT-B/32")
     parser.add_argument("--use_clip", action='store_true')
+    parser.add_argument("--skip_clip", action='store_true',
+                        help="using this command to load features generated from clip")
     parser.add_argument("--visualbert_style", action="store_true")
     parser.add_argument("--report_step", default=200, type=int)
     parser.add_argument("--pin_memory", default=True, type=bool)
@@ -242,6 +246,7 @@ def parse_args():
 args = parse_args()
 VISUAL_CONFIG=VisualConfig(
     use_clip=args.use_clip,
+    skip_clip=args.skip_clip,
     visualbert_style=args.visualbert_style,
     freeze_clip=args.freeze_clip,
     clip_model_name=args.clip_model_name,

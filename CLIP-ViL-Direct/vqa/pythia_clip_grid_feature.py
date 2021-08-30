@@ -23,7 +23,7 @@ from grid_feats import (
     add_attribute_config,
     build_detection_test_loader_with_attributes,
 )
-from timm.models.vision_transformer import resize_pos_embed
+# from timm.models.vision_transformer import resize_pos_embed
 
 # A simple mapper from object detection dataset to VQA dataset names
 dataset_to_folder_mapper = {}
@@ -74,7 +74,7 @@ def do_feature_extraction(cfg, model, dataset_name, args):
     with inference_context(model):
         dump_folder = os.path.join(cfg.OUTPUT_DIR, "features", dataset_to_folder_mapper[dataset_name])
         PathManager.mkdirs(dump_folder)
-        data_loader = build_detection_test_loader_with_attributes(cfg, dataset_name, args.model_type='clip')
+        data_loader = build_detection_test_loader_with_attributes(cfg, dataset_name, model_type='clip')
         extract_clip_feature_on_dataset(model, data_loader, dump_folder, args)
 
 def setup(args):

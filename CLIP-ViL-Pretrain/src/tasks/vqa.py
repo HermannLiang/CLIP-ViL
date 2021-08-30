@@ -393,7 +393,7 @@ if __name__ == "__main__":
     # Test or Train
     if args.test is not None:
         print("Generating test results")
-        args.fast = args.tiny = False       # Always loading all data in test
+        # args.fast = args.tiny = False       # Always loading all data in test
         if 'test' in args.test:
             vqa.predict(
                 get_data_tuple(args.test, bs=args.batch_size,

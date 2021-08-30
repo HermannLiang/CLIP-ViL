@@ -32,6 +32,17 @@ def resize_pos_embed(posemb, posemb_new):
     posemb = torch.cat([posemb_tok, posemb_grid], dim=1)
     return posemb
 
+class CLIPVisualIdentity(nn.Module):
+    def __init__(self,input_dtype):
+        super().__init__()
+        self.identity_layer = nn.Identity()
+        self.input_dtype = input_dtype
+    def forward(self,x):
+        return self.identity_layer(x)
+    @property
+    def dtype(self):
+        return self.input_dtype
+
 def initialize_clip(VISUAL_CONFIG, num_patches = 240):
     import clip
     clip_model, preprocess = clip.load(VISUAL_CONFIG.clip_model_name, jit=False)
@@ -47,6 +58,14 @@ def initialize_clip(VISUAL_CONFIG, num_patches = 240):
     if VISUAL_CONFIG.freeze_clip:
         for parameter in clip_model.parameters():
             parameter.requires_grad = False
+        print("Visual Backbone CLIP is freezed")
+
+    if VISUAL_CONFIG.skip_clip:
+        #  an identity function
+        print("CLIP skipped, using image features directly")
+        input_dtype = clip_model.visual.conv1.weight.dtype
+        clip_model.visual = CLIPVisualIdentity(input_dtype)
+
     return clip_model
 
 def initialize_vit(VISUAL_CONFIG, model_type = "ViT-B_32", pretrained_dir = "data/ViT-B_32.npz", img_size = (384, 640), num_patches = 240):

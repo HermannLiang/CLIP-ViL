@@ -519,7 +519,13 @@ class LinearPositionEmbedding(nn.Module):
         self.hidden_size = VISUAL_CONFIG.visual_feat_dim
 
     def forward(self, visn_feats):
-        # batch x 2048 x width x height
+
+        if VISUAL_CONFIG.skip_clip:
+            # visn_feats
+            # batch x width x height x 2048
+            visn_feats = visn_feats.permute(0,3,1,2)
+            # has to permute it back to make the following code work
+        
         width = visn_feats.size(2)
         width_ids = torch.arange(width, dtype=torch.long, device=visn_feats.device)
         width_ids = width_ids.unsqueeze(0)
@@ -571,7 +577,13 @@ class LXRTEncoder(nn.Module):
 
         if VISUAL_CONFIG.use_clip:
             from .visual_transformers import initialize_clip
-            self.visual_model = initialize_clip(VISUAL_CONFIG)
+            self.visual_model = initialize_clip(VISUAL_CONFIG) # returns a clip model instance
+
+        if VISUAL_CONFIG.skip_clip:
+            from .visual_transformers import initialize_clip
+            # returns a clip model instance with identity layer as visual encoder
+            self.visual_model = initialize_clip(VISUAL_CONFIG) 
+
         elif VISUAL_CONFIG.use_vit:
             from .visual_transformers import initialize_vit
             self.visual_model = initialize_vit(VISUAL_CONFIG)
@@ -583,7 +595,7 @@ class LXRTEncoder(nn.Module):
 
     def forward(self, lang_feats, lang_attention_mask,
                 visn_feats, visn_attention_mask=None):
-        if VISUAL_CONFIG.vilt_style:
+        if VISUAL_CONFIG.vilt_style: # this arg never true?
             # assert(not VISUAL_CONFIG.freeze_clip)
             if VISUAL_CONFIG.use_clip:
                 images, boxes = visn_feats
@@ -616,6 +628,24 @@ class LXRTEncoder(nn.Module):
                 
             # Cast back to fp32
             visn_feats = visn_feats.to(dtype=next(self.visn_fc.parameters()).dtype)
+
+
+        if VISUAL_CONFIG.skip_clip:
+            images, boxes = visn_feats
+            visn_feats = self.visual_model.visual(images.type(self.visual_model.visual.dtype))
+
+            if "RN" in VISUAL_CONFIG.clip_model_name:
+                if VISUAL_CONFIG.use_max_pooling:
+                    visn_feats = self.max_pooling(visn_feats)
+
+                if VISUAL_CONFIG.use_positional_embedding:
+                    visn_feats = self.visual_pos(visn_feats)
+                else:
+                    visn_feats = visn_feats.permute(0, 2, 3, 1).view(visn_feats.size(0), -1, visn_feats.size(1))
+                
+            # Cast back to fp32
+            visn_feats = visn_feats.to(dtype=next(self.visn_fc.parameters()).dtype)   
+ 
         elif VISUAL_CONFIG.use_vit:
             images, boxes = visn_feats
             visn_feats = self.visual_model(images, return_features=True)

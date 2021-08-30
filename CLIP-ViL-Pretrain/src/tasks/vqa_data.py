@@ -75,7 +75,15 @@ class VQADataset:
         # Loading datasets
         self.data = []
         for split in self.splits:
-            self.data.extend(json.load(open("data/vqa/%s.json" % split)))
+            if args.tiny:
+                print(f"Configurate to loading {TINY_IMG_NUM} data in tiny mode")
+                self.data.extend(json.load(open("data/vqa/%s.json" % split))[:TINY_IMG_NUM])
+            elif args.fast:
+                print(f"Configurate to loading {FAST_IMG_NUM} data in fast mode")
+                self.data.extend(json.load(open("data/vqa/%s.json" % split))[:FAST_IMG_NUM])
+            else:
+                self.data.extend(json.load(open("data/vqa/%s.json" % split)))
+
         print("Load %d data from split(s) %s." % (len(self.data), self.name))
 
         # Convert list to dict (for evaluation)
@@ -294,7 +302,7 @@ class VQATorchDataset(Dataset):
         #    feats = to_image_list([feats], max_size=(3, 1000, 600))[0]
         #else:
         #    feats = to_image_list([feats], max_size=(3, 600, 1000))[0]
-        assert(feats.size() == (1, 7, 7, 2048))
+        feats = feats.squeeze(0)
         boxes = torch.Tensor([0.0]) # Just being lazy
 
         # Provide label (target)
