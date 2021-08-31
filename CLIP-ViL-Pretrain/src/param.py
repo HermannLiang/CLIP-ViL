@@ -155,7 +155,7 @@ def parse_args():
     # Training configuration
     parser.add_argument("--multiGPU", action='store_const', default=False, const=True)
     parser.add_argument("--numWorkers", dest='num_workers', default=0, type=int)
-
+    parser.add_argument("--freeze_bert_N_layer", default=-1, type=int)
 
     parser.add_argument("--input_raw_images", action='store_true')
     parser.add_argument("--clip_model_name", type=str, default="ViT-B/32")

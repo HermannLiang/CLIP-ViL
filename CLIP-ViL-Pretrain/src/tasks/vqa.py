@@ -217,6 +217,22 @@ class VQA:
 
         best_valid = 0.
         train_meter = TrainingMeter()
+
+        if args.freeze_bert_N_layer>=0:
+            print(f"Freeze 0 to {args.freeze_bert_N_layer}th layers of the language encoder")
+
+            for name, param in list(self.model.named_parameters()): 
+                if f"bert.encoder.layer." in name: 
+                    current_layer = int(name.split("bert.encoder.layer.")[1].split(".")[0])
+                    if current_layer<=args.freeze_bert_N_layer:
+                        # print('I will be frozen: {}'.format(name)) 
+                        param.requires_grad = False
+                    else:
+                        pass
+                        # print('I will be free yay: {}'.format(name)) 
+
+
+
         for epoch in range(args.epochs):
             if args.use_separate_optimizer_for_visual:
                 adjust_learning_rate(self.optim.optimizers[-1], epoch, args)
