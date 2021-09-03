@@ -76,10 +76,10 @@ class VQADataset:
         self.data = []
         for split in self.splits:
             if args.tiny:
-                print(f"Configurate to loading {TINY_IMG_NUM} data in tiny mode")
+                print(f"Configurate to loading {split} {TINY_IMG_NUM} data in tiny mode")
                 self.data.extend(json.load(open("data/vqa/%s.json" % split))[:TINY_IMG_NUM])
             elif args.fast:
-                print(f"Configurate to loading {FAST_IMG_NUM} data in fast mode")
+                print(f"Configurate to loading {split} {FAST_IMG_NUM} data in fast mode")
                 self.data.extend(json.load(open("data/vqa/%s.json" % split))[:FAST_IMG_NUM])
             else:
                 self.data.extend(json.load(open("data/vqa/%s.json" % split)))
@@ -295,6 +295,9 @@ class VQATorchDataset(Dataset):
         elif "train2014" in img_id:
             image_file_name = "data/mscoco/train2014/{}.jpg".format(img_id)
             image_feat_name = f"{MSCOCO_IMGFEAT_ROOT}train2014/{img_id}.pth"
+        elif "test2015" in img_id:
+            image_file_name = "data/mscoco/test2015/{}.jpg".format(img_id)
+            image_feat_name = f"{MSCOCO_IMGFEAT_ROOT}test2015/{img_id}.pth"
         
         with open(image_feat_name,"rb") as f:
             feats = torch.load(f, map_location=torch.device("cpu"))
